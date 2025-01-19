@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/Bgoodwin24/blog_aggregator/internal/config"
+	"github.com/Bgoodwin24/gator/internal/config"
 )
 
 func main() {
