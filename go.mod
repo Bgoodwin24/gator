@@ -1,3 +1,3 @@
-module github.com/Bgoodwin24/blog_aggregator
+module github.com/Bgoodwin24/gator
 
 go 1.23.5
