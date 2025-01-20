@@ -1,34 +1,35 @@
 package main
 
 import (
-	"fmt"
+	"log"
+	"os"
 
+	"github.com/Bgoodwin24/gator/internal/cli"
 	"github.com/Bgoodwin24/gator/internal/config"
 )
 
 func main() {
 	//Read the config file
-	cfg, err := config.Read(".gatorconfig.json")
+	cfg, err := config.Read()
 	if err != nil {
-		fmt.Println("Error:", err)
-		return
+		log.Fatalf("error reading config: %v", err)
 	}
 
-	//Set the current user and persist to the file
-	err = cfg.SetUser("Billy")
-	if err != nil {
-		fmt.Println("Error setting user:", err)
-		return
+	newState := &cli.State{Config: &cfg}
+
+	cmd := cli.Commands{}
+
+	cmd.Register("login", cli.HandlerLogin)
+	if len(os.Args) < 2 {
+		log.Fatal("Not enough arguments")
 	}
 
-	//Read the config file again to verify changes
-	cfg, err = config.Read(".gatorconfig.json")
-	if err != nil {
-		fmt.Println("Error reading updated config:", err)
-		return
+	command := cli.Command{
+		Name: os.Args[1],
+		Args: os.Args[2:],
 	}
 
-	//Print the updated config
-	fmt.Println("Database URL:", cfg.DBUrl)
-	fmt.Println("Current User:", cfg.CurrentUserName)
+	if err := cmd.Run(newState, command); err != nil {
+		log.Fatal(err)
+	}
 }
