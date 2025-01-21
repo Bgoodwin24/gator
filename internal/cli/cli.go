@@ -1,13 +1,18 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/Bgoodwin24/gator/internal/config"
+	"github.com/Bgoodwin24/gator/internal/database"
+	"github.com/google/uuid"
 )
 
 type State struct {
-	*config.Config
+	DB     *database.Queries
+	Config *config.Config
 }
 
 type Command struct {
@@ -24,11 +29,44 @@ func HandlerLogin(s *State, cmd Command) error {
 		return fmt.Errorf("username required")
 	}
 
+	// Attempt to get user from database
+	username := cmd.Args[0]
+	_, err := s.DB.GetUser(context.Background(), username)
+	if err != nil {
+		return fmt.Errorf("user does not exist")
+	}
+
+	// User exists, set them as current user
 	if err := s.Config.SetUser(cmd.Args[0]); err != nil {
 		return fmt.Errorf("failed to set username: %w", err)
 	}
 
 	fmt.Printf("User name set: %s", cmd.Args[0])
+	return nil
+}
+
+func HandlerRegister(s *State, cmd Command) error {
+	if len(cmd.Args) == 0 {
+		return fmt.Errorf("username required")
+	}
+
+	user, err := s.DB.CreateUser(context.Background(), database.CreateUserParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      cmd.Args[0],
+	})
+
+	if err != nil {
+		return fmt.Errorf("user already exists")
+	}
+
+	// Set user in config file
+	if err := s.Config.SetUser(cmd.Args[0]); err != nil {
+		return fmt.Errorf("failed to set username: %w", err)
+	}
+
+	fmt.Printf("Created user: %+v\n", user)
 	return nil
 }
 

@@ -30,14 +30,14 @@ func Read() (Config, error) {
 		return Config{}, err
 	}
 
-	//Open file
+	// Open file
 	file, err := os.Open(fullPath)
 	if err != nil {
 		return Config{}, err
 	}
 	defer file.Close()
 
-	//Decode JSON to Config
+	// Decode JSON to Config
 	decoder := json.NewDecoder(file)
 	cfg := Config{}
 	err = decoder.Decode(&cfg)
@@ -66,7 +66,7 @@ func write(cfg Config) error {
 		return err
 	}
 
-	//Overwrites existing file
+	// Overwrites existing file
 	file, err := os.Create(fullPath)
 	if err != nil {
 		return err
