@@ -24,6 +24,7 @@ func (cfg *Config) SetUser(userName string) error {
 	return write(*cfg)
 }
 
+// Reads Json at Config
 func Read() (Config, error) {
 	fullPath, err := getConfigFilePath()
 	if err != nil {

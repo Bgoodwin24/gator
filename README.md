@@ -3,4 +3,4 @@
 ## Commands:
 
 * `gator login <username>` - sets the current user in the config
-* `gator register` - adds a new user to the database
+* `gator register <username>` - adds a new user to the database

@@ -12,6 +12,49 @@ import (
 	"github.com/google/uuid"
 )
 
+const addFeed = `-- name: AddFeed :one
+INSERT INTO feeds (id, created_at, updated_at, name, url, user_id)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6
+)
+RETURNING id, created_at, updated_at, name, url, user_id
+`
+
+type AddFeedParams struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Name      string
+	Url       string
+	UserID    uuid.UUID
+}
+
+func (q *Queries) AddFeed(ctx context.Context, arg AddFeedParams) (Feed, error) {
+	row := q.db.QueryRowContext(ctx, addFeed,
+		arg.ID,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.Name,
+		arg.Url,
+		arg.UserID,
+	)
+	var i Feed
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+		&i.Url,
+		&i.UserID,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, created_at, updated_at, name)
 VALUES (
@@ -47,6 +90,45 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const fetchFeeds = `-- name: FetchFeeds :many
+SELECT
+    feeds.name AS feed_name,
+    feeds.url AS feed_url,
+    users.name AS user_name
+FROM feeds
+JOIN users
+ON users.id = feeds.user_id
+`
+
+type FetchFeedsRow struct {
+	FeedName string
+	FeedUrl  string
+	UserName string
+}
+
+func (q *Queries) FetchFeeds(ctx context.Context) ([]FetchFeedsRow, error) {
+	rows, err := q.db.QueryContext(ctx, fetchFeeds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FetchFeedsRow
+	for rows.Next() {
+		var i FetchFeedsRow
+		if err := rows.Scan(&i.FeedName, &i.FeedUrl, &i.UserName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id, created_at, updated_at, name
 FROM users
@@ -63,4 +145,47 @@ func (q *Queries) GetUser(ctx context.Context, name string) (User, error) {
 		&i.Name,
 	)
 	return i, err
+}
+
+const getUsers = `-- name: GetUsers :many
+SELECT created_at, name
+FROM users
+ORDER BY created_at DESC
+`
+
+type GetUsersRow struct {
+	CreatedAt time.Time
+	Name      string
+}
+
+func (q *Queries) GetUsers(ctx context.Context) ([]GetUsersRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersRow
+	for rows.Next() {
+		var i GetUsersRow
+		if err := rows.Scan(&i.CreatedAt, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reset = `-- name: Reset :exec
+DELETE FROM users
+`
+
+func (q *Queries) Reset(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, reset)
+	return err
 }

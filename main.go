@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 
@@ -13,6 +14,11 @@ import (
 )
 
 func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Expected 'agg', 'login', 'register' command")
+		os.Exit(1)
+	}
+
 	// Read the config file
 	cfg, err := config.Read()
 	if err != nil {
@@ -36,10 +42,11 @@ func main() {
 	cmd := cli.Commands{}
 	cmd.Register("login", cli.HandlerLogin)
 	cmd.Register("register", cli.HandlerRegister)
-
-	if len(os.Args) < 2 {
-		log.Fatal("Not enough arguments")
-	}
+	cmd.Register("reset", cli.HandlerReset)
+	cmd.Register("users", cli.HandlerGetUsers)
+	cmd.Register("agg", cli.HandlerAgg)
+	cmd.Register("addfeed", cli.HandlerAddFeed)
+	cmd.Register("feeds", cli.HandlerFeeds)
 
 	command := cli.Command{
 		Name: os.Args[1],
