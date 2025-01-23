@@ -12,49 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const addFeed = `-- name: AddFeed :one
-INSERT INTO feeds (id, created_at, updated_at, name, url, user_id)
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6
-)
-RETURNING id, created_at, updated_at, name, url, user_id
-`
-
-type AddFeedParams struct {
-	ID        uuid.UUID
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Name      string
-	Url       string
-	UserID    uuid.UUID
-}
-
-func (q *Queries) AddFeed(ctx context.Context, arg AddFeedParams) (Feed, error) {
-	row := q.db.QueryRowContext(ctx, addFeed,
-		arg.ID,
-		arg.CreatedAt,
-		arg.UpdatedAt,
-		arg.Name,
-		arg.Url,
-		arg.UserID,
-	)
-	var i Feed
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Name,
-		&i.Url,
-		&i.UserID,
-	)
-	return i, err
-}
-
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, created_at, updated_at, name)
 VALUES (
@@ -88,45 +45,6 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Name,
 	)
 	return i, err
-}
-
-const fetchFeeds = `-- name: FetchFeeds :many
-SELECT
-    feeds.name AS feed_name,
-    feeds.url AS feed_url,
-    users.name AS user_name
-FROM feeds
-JOIN users
-ON users.id = feeds.user_id
-`
-
-type FetchFeedsRow struct {
-	FeedName string
-	FeedUrl  string
-	UserName string
-}
-
-func (q *Queries) FetchFeeds(ctx context.Context) ([]FetchFeedsRow, error) {
-	rows, err := q.db.QueryContext(ctx, fetchFeeds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []FetchFeedsRow
-	for rows.Next() {
-		var i FetchFeedsRow
-		if err := rows.Scan(&i.FeedName, &i.FeedUrl, &i.UserName); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const getUser = `-- name: GetUser :one
