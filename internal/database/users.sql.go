@@ -66,26 +66,25 @@ func (q *Queries) GetUser(ctx context.Context, name string) (User, error) {
 }
 
 const getUsers = `-- name: GetUsers :many
-SELECT created_at, name
+SELECT id, created_at, updated_at, name
 FROM users
-ORDER BY created_at DESC
 `
 
-type GetUsersRow struct {
-	CreatedAt time.Time
-	Name      string
-}
-
-func (q *Queries) GetUsers(ctx context.Context) ([]GetUsersRow, error) {
+func (q *Queries) GetUsers(ctx context.Context) ([]User, error) {
 	rows, err := q.db.QueryContext(ctx, getUsers)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetUsersRow
+	var items []User
 	for rows.Next() {
-		var i GetUsersRow
-		if err := rows.Scan(&i.CreatedAt, &i.Name); err != nil {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Name,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

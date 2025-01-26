@@ -22,7 +22,7 @@ VALUES (
     $5,
     $6
 )
-RETURNING id, created_at, updated_at, name, url, user_id
+RETURNING id, created_at, updated_at, name, url, user_id, last_fetched_at
 `
 
 type AddFeedParams struct {
@@ -51,14 +51,15 @@ func (q *Queries) AddFeed(ctx context.Context, arg AddFeedParams) (Feed, error) 
 		&i.Name,
 		&i.Url,
 		&i.UserID,
+		&i.LastFetchedAt,
 	)
 	return i, err
 }
 
 const createFeedFollow = `-- name: CreateFeedFollow :many
 WITH inserted_feed_follow AS (
-    INSERT INTO feed_follows (id, user_id, feed_id, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO feed_follows (id, created_at, updated_at, user_id, feed_id)
+    VALUES (gen_random_uuid(), NOW(), NOW(), $1, $2)
     RETURNING id, created_at, updated_at, user_id, feed_id
 )
 
@@ -74,11 +75,8 @@ ON inserted_feed_follow.user_id = users.id
 `
 
 type CreateFeedFollowParams struct {
-	ID        uuid.UUID
-	UserID    uuid.UUID
-	FeedID    uuid.UUID
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	UserID uuid.UUID
+	FeedID uuid.UUID
 }
 
 type CreateFeedFollowRow struct {
@@ -92,13 +90,7 @@ type CreateFeedFollowRow struct {
 }
 
 func (q *Queries) CreateFeedFollow(ctx context.Context, arg CreateFeedFollowParams) ([]CreateFeedFollowRow, error) {
-	rows, err := q.db.QueryContext(ctx, createFeedFollow,
-		arg.ID,
-		arg.UserID,
-		arg.FeedID,
-		arg.CreatedAt,
-		arg.UpdatedAt,
-	)
+	rows, err := q.db.QueryContext(ctx, createFeedFollow, arg.UserID, arg.FeedID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +166,30 @@ func (q *Queries) FetchFeeds(ctx context.Context) ([]FetchFeedsRow, error) {
 	return items, nil
 }
 
+const getFeedFollow = `-- name: GetFeedFollow :one
+SELECT id, created_at, updated_at, user_id, feed_id
+FROM feed_follows
+WHERE user_id = $1 AND feed_id = $2
+`
+
+type GetFeedFollowParams struct {
+	UserID uuid.UUID
+	FeedID uuid.UUID
+}
+
+func (q *Queries) GetFeedFollow(ctx context.Context, arg GetFeedFollowParams) (FeedFollow, error) {
+	row := q.db.QueryRowContext(ctx, getFeedFollow, arg.UserID, arg.FeedID)
+	var i FeedFollow
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UserID,
+		&i.FeedID,
+	)
+	return i, err
+}
+
 const getFeedFollowsForUser = `-- name: GetFeedFollowsForUser :many
 SELECT 
     feed_follows.id, feed_follows.created_at, feed_follows.updated_at, feed_follows.user_id, feed_follows.feed_id,
@@ -228,29 +244,66 @@ func (q *Queries) GetFeedFollowsForUser(ctx context.Context, userID uuid.UUID) (
 	return items, nil
 }
 
-const unfollow = `-- name: Unfollow :one
+const getNextFeedToFetch = `-- name: GetNextFeedToFetch :one
+SELECT id, created_at, updated_at, name, url, user_id, last_fetched_at
+FROM feeds
+ORDER BY last_fetched_at ASC NULLS FIRST
+LIMIT 1
+`
+
+func (q *Queries) GetNextFeedToFetch(ctx context.Context) (Feed, error) {
+	row := q.db.QueryRowContext(ctx, getNextFeedToFetch)
+	var i Feed
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+		&i.Url,
+		&i.UserID,
+		&i.LastFetchedAt,
+	)
+	return i, err
+}
+
+const markFeedFetched = `-- name: MarkFeedFetched :one
+UPDATE feeds
+SET last_fetched_at = NOW(),
+updated_at = NOW()
+WHERE id = $1
+RETURNING id, created_at, updated_at, name, url, user_id, last_fetched_at
+`
+
+func (q *Queries) MarkFeedFetched(ctx context.Context, id uuid.UUID) (Feed, error) {
+	row := q.db.QueryRowContext(ctx, markFeedFetched, id)
+	var i Feed
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+		&i.Url,
+		&i.UserID,
+		&i.LastFetchedAt,
+	)
+	return i, err
+}
+
+const unfollow = `-- name: Unfollow :exec
 DELETE FROM feed_follows
     USING feeds
     WHERE feed_follows.feed_id = feeds.id
     AND feed_follows.user_id = $1
-    AND feeds.url = $2
+    AND feeds.name = $2
     RETURNING feed_follows.id, feed_follows.created_at, feed_follows.updated_at, feed_follows.user_id, feed_follows.feed_id
 `
 
 type UnfollowParams struct {
 	UserID uuid.UUID
-	Url    string
+	Name   string
 }
 
-func (q *Queries) Unfollow(ctx context.Context, arg UnfollowParams) (FeedFollow, error) {
-	row := q.db.QueryRowContext(ctx, unfollow, arg.UserID, arg.Url)
-	var i FeedFollow
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.UserID,
-		&i.FeedID,
-	)
-	return i, err
+func (q *Queries) Unfollow(ctx context.Context, arg UnfollowParams) error {
+	_, err := q.db.ExecContext(ctx, unfollow, arg.UserID, arg.Name)
+	return err
 }

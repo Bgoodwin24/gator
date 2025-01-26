@@ -2,7 +2,12 @@ package cli
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Bgoodwin24/gator/internal/config"
@@ -96,13 +101,80 @@ func HandlerGetUsers(s *State, cmd Command) error {
 	return nil
 }
 
-func HandlerAgg(s *State, cmd Command) error {
-	feed, err := rss.FetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+func ScrapeFeeds(s *State) {
+	feed, err := s.DB.GetNextFeedToFetch(context.Background())
 	if err != nil {
-		return fmt.Errorf("couldn't fetch feed: %w", err)
+		log.Println("couldn't get next feeds to fetch", err)
+		return
 	}
-	fmt.Printf("Feed: %+v\n", feed)
-	return nil
+	log.Println("Found a feed to fetch!")
+	ScrapeFeed(s.DB, feed)
+}
+
+func ScrapeFeed(db *database.Queries, feed database.Feed) {
+	_, err := db.MarkFeedFetched(context.Background(), feed.ID)
+	if err != nil {
+		log.Printf("Couldn't mark feed %s fetched: %v", feed.Name, err)
+		return
+	}
+
+	feedData, err := rss.FetchFeed(context.Background(), feed.Url)
+	if err != nil {
+		log.Printf("couldn't collect feed %s fetched: %v:", feed.Name, err)
+		return
+	}
+
+	for _, item := range feedData.Channel.Item {
+		fmt.Printf("Found post: %s\n", item.Title)
+
+		publishedAt, err := time.Parse(time.RFC1123Z, item.PubDate)
+		if err != nil {
+			// Keep the fallbacks in case other feeds use different formats
+			publishedAt, err = time.Parse(time.RFC1123, item.PubDate)
+			if err != nil {
+				publishedAt, err = time.Parse(time.RFC822, item.PubDate)
+				if err != nil {
+					log.Printf("couldn't parse published at with any format: %v", err)
+					continue
+				}
+			}
+		}
+
+		_, err = db.CreatePost(context.Background(), database.CreatePostParams{
+			ID:          uuid.New(),
+			Title:       item.Title,
+			Url:         item.Link,
+			Description: item.Description,
+			PublishedAt: publishedAt,
+			FeedID:      feed.ID,
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
+				continue
+			}
+			log.Printf("Error saving post: %v", err)
+		}
+	}
+	log.Printf("Feed %s collected, %v posts found", feed.Name, len(feedData.Channel.Item))
+}
+
+func HandlerAgg(s *State, cmd Command) error {
+	if len(cmd.Args) < 1 || len(cmd.Args) > 2 {
+		return fmt.Errorf("usage: %v <time_between_reqs>", cmd.Name)
+	}
+
+	timeBetweenRequests, err := time.ParseDuration(cmd.Args[0])
+	if err != nil {
+		return fmt.Errorf("invalid duration: %w", err)
+	}
+
+	log.Printf("Collecting feeds every %v\n", timeBetweenRequests)
+
+	ticker := time.NewTicker(timeBetweenRequests)
+
+	for ; ; <-ticker.C {
+		ScrapeFeeds(s)
+	}
 }
 
 func HandlerAddFeed(s *State, cmd Command, user database.User) error {
@@ -123,17 +195,6 @@ func HandlerAddFeed(s *State, cmd Command, user database.User) error {
 	})
 	if err != nil {
 		return fmt.Errorf("couldn't create feed: %w", err)
-	}
-
-	_, err = s.DB.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
-		ID:        uuid.New(),
-		UserID:    user.ID,
-		FeedID:    feed.ID,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	})
-	if err != nil {
-		return fmt.Errorf("couldn't create feed follow: %w", err)
 	}
 
 	fmt.Println("Feed created successfully:")
@@ -166,32 +227,39 @@ func HandlerFeeds(s *State, cmd Command) error {
 
 func HandlerFollow(s *State, cmd Command, user database.User) error {
 	if len(cmd.Args) < 1 {
-		return fmt.Errorf("expected argument: url")
+		return fmt.Errorf("expected argument: feed name")
 	}
 
-	url := cmd.Args[0]
-
-	current_user := s.Config.CurrentUserName
-	if current_user == "" {
-		return fmt.Errorf("no user is currently logged in")
-	}
+	feedName := cmd.Args[0]
 
 	feeds, err := s.DB.FetchFeeds(context.Background())
 	if err != nil {
-		return fmt.Errorf("feed not found with url: %s", url)
+		return fmt.Errorf("error fetching feeds: %w", err)
 	}
 
 	var feed database.FetchFeedsRow
 	found := false
 	for _, f := range feeds {
-		if f.FeedUrl == url {
+		if f.FeedName == feedName {
 			feed = f
 			found = true
 			break
 		}
 	}
 	if !found {
-		return fmt.Errorf("feed not found with url: %s", url)
+		return fmt.Errorf("feed not found with name: %s", feedName)
+	}
+
+	_, err = s.DB.GetFeedFollow(context.Background(), database.GetFeedFollowParams{
+		UserID: user.ID,
+		FeedID: feed.FeedID,
+	})
+	if err == nil {
+		return fmt.Errorf("you are already following '%s'", feed.FeedName)
+	}
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("error checking feed follow: %w", err)
 	}
 
 	_, err = s.DB.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
@@ -199,10 +267,10 @@ func HandlerFollow(s *State, cmd Command, user database.User) error {
 		FeedID: feed.FeedID,
 	})
 	if err != nil {
-		return fmt.Errorf("faild to follow feed: %v", err)
+		return fmt.Errorf("failed to follow feed: %w", err)
 	}
 
-	fmt.Printf("User '%s' is now following feed '%s'.\n", user.Name, feed.FeedName)
+	fmt.Printf("Following '%s'\n", feed.FeedName)
 	return nil
 }
 
@@ -234,16 +302,93 @@ func MiddlewareLoggedIn(handler func(s *State, cmd Command, user database.User) 
 }
 
 func HandlerUnfollow(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) < 1 {
+		return fmt.Errorf("feed name is required")
+	}
+
+	feedName := cmd.Args[0]
 	userID := user.ID
 
-	_, err := s.DB.Unfollow(context.Background(), database.UnfollowParams{
+	err := s.DB.Unfollow(context.Background(), database.UnfollowParams{
 		UserID: userID,
-		Url:    cmd.Args[0],
+		Name:   feedName,
 	})
 	if err != nil {
 		return fmt.Errorf("couldn't unfollow feed: %w", err)
 	}
 	return nil
+}
+
+func HandlerUpdate(s *State, cmd Command, user database.User) error {
+	ScrapeFeeds(s)
+	return nil
+}
+
+func HandlerBrowse(s *State, cmd Command, user database.User) error {
+	limit := 2
+
+	if len(cmd.Args) > 0 {
+		userLimit, err := strconv.Atoi(cmd.Args[0])
+		if err != nil {
+			return fmt.Errorf("invalid limit: %v", err)
+		}
+		limit = userLimit
+	}
+
+	posts, err := s.DB.GetPostsForUsers(context.Background(), database.GetPostsForUsersParams{
+		UserID: user.ID,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		return fmt.Errorf("error getting posts: %v", err)
+	}
+
+	for i, post := range posts {
+		if i > 0 {
+			fmt.Println("----------------------------------------")
+		}
+		fmt.Printf("Title: %s\n", post.Title)
+		fmt.Printf("Url: %s\n", post.Url)
+		fmt.Printf("Published: %s\n", post.PublishedAt.Format("2006-01-02 15:04:05 -0700"))
+		fmt.Printf("Feed: %s\n", post.FeedName)
+		if post.Description != "" {
+			if !strings.Contains(post.Description, "<p>Article URL:") {
+				cleanDesc := stripHTML(post.Description)
+				if cleanDesc != "" {
+					fmt.Printf("Description: %s\n", cleanDesc)
+				}
+			}
+		}
+		fmt.Println()
+	}
+	return nil
+}
+
+func stripHTML(html string) string {
+	text := strings.ReplaceAll(html, "&nbsp;", " ")
+	text = strings.ReplaceAll(text, "&amp;", "&")
+	text = strings.ReplaceAll(text, "&lt;", "<")
+	text = strings.ReplaceAll(text, "&gt;", ">")
+
+	var buf strings.Builder
+	inTag := false
+	for _, r := range text {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			buf.WriteRune(r)
+		}
+	}
+	result := strings.TrimSpace(buf.String())
+	result = strings.Join(strings.Fields(result), " ")
+
+	return result
 }
 
 func (c *Commands) Register(name string, f func(*State, Command) error) {

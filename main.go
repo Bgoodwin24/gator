@@ -40,8 +40,8 @@ func main() {
 	}
 
 	cmd := cli.Commands{}
-	cmd.Register("login", cli.HandlerLogin)
 	cmd.Register("register", cli.HandlerRegister)
+	cmd.Register("login", cli.HandlerLogin)
 	cmd.Register("reset", cli.HandlerReset)
 	cmd.Register("users", cli.HandlerGetUsers)
 	cmd.Register("agg", cli.HandlerAgg)
@@ -50,6 +50,8 @@ func main() {
 	cmd.Register("follow", cli.MiddlewareLoggedIn(cli.HandlerFollow))
 	cmd.Register("following", cli.MiddlewareLoggedIn(cli.HandlerFollowing))
 	cmd.Register("unfollow", cli.MiddlewareLoggedIn(cli.HandlerUnfollow))
+	cmd.Register("update", cli.MiddlewareLoggedIn(cli.HandlerUpdate))
+	cmd.Register("browse", cli.MiddlewareLoggedIn(cli.HandlerBrowse))
 
 	command := cli.Command{
 		Name: os.Args[1],

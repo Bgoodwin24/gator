@@ -17,6 +17,5 @@ WHERE name = $1;
 DELETE FROM users;
 
 -- name: GetUsers :many
-SELECT created_at, name
-FROM users
-ORDER BY created_at DESC;
+SELECT *
+FROM users;
