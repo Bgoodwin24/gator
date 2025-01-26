@@ -27,7 +27,7 @@
 
 ## Gator/Gator Command Usage:
 * After installing, you can run gator from anywhere by typing:
-    * `gator <commandname> <commandparameters>`
+    * `gator &lt;commandname&gt; &lt;commandparameters&gt;`
 * Ensure `$HOME/go/bin` is in your `PATH`. If the `gator` command doesn’t work:
     1. `echo $PATH`
     2. If not present, add it temporarily with:
@@ -37,21 +37,21 @@
     4. Test that `PATH` update worked with: `gator --help`
 
 ## User Management Commands:
-* `gator register <username>` - Adds a new user to the database
-* `gator login <username>` - Sets the current user in the config
+* `gator register &lt;username&gt;` - Adds a new user to the database
+* `gator login &lt;username&gt;` - Sets the current user in the config
 * `gator users` - Lists users and indicates which one is currently logged in
 
 ## Feed Management Commands:
 Requires authenticated user
 
-* `gator addfeed <feedname> <feedurl>` - Adds a feed to a user
+* `gator addfeed &lt;feedname&gt; &lt;feedurl&gt;` - Adds a feed to a user
     * Example: `gator addfeed "Example Name" "https://example.com/feed.rss"`
-* `gator follow <feedname> <feedurl>` - Follows a feed
+* `gator follow &lt;feedname&gt; &lt;feedurl&gt;` - Follows a feed
     * Example: `gator follow "Example Name" "https://example.com/feed.rss"`
 * `gator following` - Lists all feeds the current user is following
-* `gator unfollow <feedurl> <username>` - Unfollows a feed for the current user
+* `gator unfollow &lt;feedurl&gt; &lt;username&gt;` - Unfollows a feed for the current user
     * Example: `gator unfollow "https://example.com/feed.rss" yourusername`
-* `gator browse <optional limit>` - Shows posts from your feeds
+* `gator browse &lt;optional limit&gt;` - Shows posts from your feeds
 
 ## Utility Commands:
 * `gator update` - Fetches posts from your feeds
@@ -60,7 +60,7 @@ Requires authenticated user
     ⚠️**Note:** Use with caution. This resets your database and will remove all stored users and feeds.
     ⚠️ Ensure your `~/.gatorconfig.json` database URL is correct before running commands requiring database access.
     * Example: `gator reset`
-* `gator agg <duration>` - Fetch RSS feeds and display the posts for the current user from the last `<duration>`, where duration is specified in seconds (e.g., `10s` means 10 seconds)
+* `gator agg &lt;duration&gt;` - Fetch RSS feeds and display the posts for the current user from the last `<duration>`, where duration is specified in seconds (e.g., `10s` means 10 seconds)
     * Example: `gator agg 10s`
 
 ## Example Workflow
